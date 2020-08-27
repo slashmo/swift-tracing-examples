@@ -10,3 +10,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 //===----------------------------------------------------------------------===//
+public enum FrontendServiceError: Error {
+    case missingCustomerServiceBaseURL
+    case internalServerError
+}

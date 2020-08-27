@@ -27,6 +27,7 @@ import AsyncHTTPClient
 import Baggage
 import BaggageLogging
 import Foundation
+import FrontendService
 import Logging
 import NIO
 import NIOHTTP1
@@ -62,6 +63,12 @@ extension String {
     }
 }
 
+struct Customer: Codable {
+    let id: String
+    let name: String
+    let location: String
+}
+
 private func httpResponseHead(request: HTTPRequestHead, status: HTTPResponseStatus, headers: HTTPHeaders = HTTPHeaders()) -> HTTPResponseHead {
     var head = HTTPResponseHead(version: request.version, status: status, headers: headers)
     let connectionHeaders: [String] = head.headers[canonicalForm: "connection"].map { $0.lowercased() }
@@ -88,6 +95,8 @@ private final class HTTPHandler: ChannelInboundHandler {
     public typealias OutboundOut = HTTPServerResponsePart
 
     private let logger: Logger
+    private var client: HTTPClient!
+    private let customerServiceBaseURL: String
 
     private enum State {
         case idle
@@ -124,46 +133,79 @@ private final class HTTPHandler: ChannelInboundHandler {
     private var handlerFuture: EventLoopFuture<Void>?
     private let fileIO: NonBlockingFileIO
 
-    public init(fileIO: NonBlockingFileIO, htdocsPath: String, logger: Logger) {
+    public init(fileIO: NonBlockingFileIO, htdocsPath: String, logger: Logger) throws {
         self.htdocsPath = htdocsPath
         self.fileIO = fileIO
         self.logger = logger
+        guard let customerServiceBaseURL = ProcessInfo.processInfo.environment["CUSTOMER_SERVICE_BASE_URL"] else {
+            throw FrontendServiceError.missingCustomerServiceBaseURL
+        }
+        self.customerServiceBaseURL = customerServiceBaseURL
+    }
+
+    func channelActive(context: ChannelHandlerContext) {
+        self.client = HTTPClient(eventLoopGroupProvider: .shared(context.eventLoop))
+    }
+
+    func channelInactive(context: ChannelHandlerContext) {
+        self.client.shutdown { error in
+            if let error = error {
+                self.logger.error("Error shutting down HTTPClient: \(error)")
+            }
+        }
     }
 
     private func handleDispatch(context: ChannelHandlerContext, request: HTTPServerRequestPart) {
         switch request {
-        case .head(let requestHead):
-            self.keepAlive = requestHead.isKeepAlive
+        case .head:
             self.state.requestReceived()
-
-            let client = HTTPClient(eventLoopGroupProvider: .shared(context.eventLoop))
-            let serviceContext = FrontendServiceContext(logger: self.logger, baggage: context.baggage)
-
-            client
-                .get(url: "http://localhost:8080/customer?customer=123", context: serviceContext)
-                .whenComplete { result in
-                    switch result {
-                    case .success(let response):
-                        print(response)
-                        self.buffer.clear()
-                        self.buffer.writeString(#"{}\n"#)
-                        var responseHead = httpResponseHead(request: requestHead, status: HTTPResponseStatus.ok)
-                        responseHead.headers.add(name: "content-type", value: "application/json")
-                        responseHead.headers.add(name: "content-length", value: "\(self.buffer.readableBytes)")
-                        let serverResponse = HTTPServerResponsePart.head(responseHead)
-                        context.write(self.wrapOutboundOut(serverResponse), promise: nil)
-                    case .failure:
-                        // TODO: Write 500
-                        fatalError()
-                    }
-                }
         case .body:
             break
         case .end:
+            let version = HTTPVersion(major: 1, minor: 1)
+
             self.state.requestComplete()
-            let content = HTTPServerResponsePart.body(.byteBuffer(self.buffer!.slice()))
-            context.write(self.wrapOutboundOut(content), promise: nil)
-            self.completeResponse(context, trailers: nil, promise: nil)
+
+            let serviceContext = FrontendServiceContext(logger: self.logger, baggage: context.baggage)
+            self.client
+                .get(url: self.customerServiceBaseURL + "/customer?customer=123", context: serviceContext)
+                .flatMapThrowing { response -> Customer in
+                    if case .ok = response.status, let body = response.body {
+                        let jsonDecoder = JSONDecoder()
+                        let customerData = body.getData(at: 0, length: body.readableBytes)!
+                        return try jsonDecoder.decode(Customer.self, from: customerData)
+                    } else {
+                        throw FrontendServiceError.internalServerError
+                    }
+                }
+                .whenComplete { result in
+                    switch result {
+                    case .success(let customer):
+                        // TODO: - Fetch matching driver for customer location
+                        serviceContext.logger.info("Fetch driver near location: \(customer.location)")
+                        let driver = "Swift"
+
+                        // TODO: - Fetch fasted route
+                        serviceContext.logger
+                            .info(#"Fetch ETA to match customer "\#(customer.name)" and driver "\#(driver)""#)
+                        let eta = .random(in: 3 ... 20) * 60000
+                        self.buffer.clear()
+                        self.buffer.writeString(#"{"Driver": "Swift", "ETA": \#(eta)}"#)
+
+                        let responseHead = HTTPResponseHead(version: version, status: .ok, headers: [
+                            "content-type": "application/json",
+                            "content-length": "\(self.buffer.readableBytes)",
+                        ])
+                        context.writeAndFlush(self.wrapOutboundOut(.head(responseHead)), promise: nil)
+
+                        context.write(self.wrapOutboundOut(.body(.byteBuffer(self.buffer.slice()))), promise: nil)
+                        self.completeResponse(context, trailers: nil, promise: nil)
+                    case .failure:
+                        let responseHead = HTTPResponseHead(version: version, status: .internalServerError)
+                        context.writeAndFlush(self.wrapOutboundOut(.head(responseHead)), promise: nil)
+                        self.completeResponse(context, trailers: nil, promise: nil)
+                    }
+                }
         }
     }
 
@@ -349,7 +391,7 @@ threadPool.start()
 
 func childChannelInitializer(channel: Channel) -> EventLoopFuture<Void> {
     channel.pipeline.configureHTTPServerPipeline(withErrorHandling: true).flatMap {
-        channel.pipeline.addHandler(HTTPHandler(fileIO: fileIO, htdocsPath: htdocs, logger: logger))
+        try! channel.pipeline.addHandler(HTTPHandler(fileIO: fileIO, htdocsPath: htdocs, logger: logger))
     }
 }
 
