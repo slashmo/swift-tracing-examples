@@ -140,7 +140,7 @@ private final class HTTPHandler: ChannelInboundHandler {
             let serviceContext = FrontendServiceContext(logger: self.logger, baggage: context.baggage)
 
             client
-                .get(url: "http://localhost:8080", context: serviceContext)
+                .get(url: "http://localhost:8080/customer?customer=123", context: serviceContext)
                 .whenComplete { result in
                     switch result {
                     case .success(let response):

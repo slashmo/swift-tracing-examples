@@ -35,7 +35,6 @@ final class CustomerController {
         span.attributes.http.target = request.url.string
         span.attributes.http.scheme = request.url.scheme
         span.attributes.http.userAgent = request.headers.userAgent
-        span.attributes.http.requestContentLength = request.headers.contentLength
 
         if let remoteAddress = request.remoteAddress {
             span.attributes.net.peerIP = remoteAddress.ipAddress
@@ -62,29 +61,13 @@ final class CustomerController {
 
     private func getCustomer(_ request: Request, context: BaggageContext) -> EventLoopFuture<Response> {
         do {
-            try GetCustomerRequest.validate(content: request)
-            let getCustomerRequest = try request.content.decode(GetCustomerRequest.self)
-
+            let customerID = try request.query.get(String.self, at: "customer")
             return CustomerDatabase()
-                .findCustomer(byID: getCustomerRequest.id, context: .init(request: request, context: context))
+                .findCustomer(byID: customerID, context: .init(request: request, context: context))
                 .encodeResponse(status: .ok, for: request)
         } catch {
             return request.eventLoop.makeFailedFuture(Abort(.badRequest))
         }
-    }
-}
-
-private struct GetCustomerRequest: Content {
-    let id: String
-
-    private enum CodingKeys: String, CodingKey {
-        case id = "customer"
-    }
-}
-
-extension GetCustomerRequest: Validatable {
-    static func validations(_ validations: inout Validations) {
-        validations.add("customer", as: String.self, is: !.empty)
     }
 }
 
