@@ -33,8 +33,8 @@
         "repositoryURL": "https://github.com/slashmo/gsoc-swift-baggage-context.git",
         "state": {
           "branch": null,
-          "revision": "744d984ac940535287cb036e44e6970c2a93f012",
-          "version": "0.3.0"
+          "revision": "9be28a84507395a22af0278600b324c22d7277be",
+          "version": "0.4.0"
         }
       },
       {
@@ -42,7 +42,7 @@
         "repositoryURL": "https://github.com/slashmo/gsoc-swift-tracing.git",
         "state": {
           "branch": "main",
-          "revision": "fe80d764ad225b1dfd06dcb57d08b5e3485662f9",
+          "revision": "44ceea37f6ddabc086ef9b48aea4396d4cb37068",
           "version": null
         }
       },
@@ -60,8 +60,8 @@
         "repositoryURL": "https://github.com/apple/swift-argument-parser.git",
         "state": {
           "branch": null,
-          "revision": "15351c1cd009eba0b6e438bfef55ea9847a8dc4a",
-          "version": "0.3.0"
+          "revision": "92646c0cdbaca076c8d3d0207891785b3379cbff",
+          "version": "0.3.1"
         }
       },
       {
@@ -78,8 +78,8 @@
         "repositoryURL": "https://github.com/apple/swift-crypto.git",
         "state": {
           "branch": null,
-          "revision": "9b9d1868601a199334da5d14f4ab2d37d4f8d0c5",
-          "version": "1.0.2"
+          "revision": "afe4c9b5f65b612a2bd4b1cb5ac70eb5841f278e",
+          "version": "1.1.0"
         }
       },
       {
@@ -105,8 +105,8 @@
         "repositoryURL": "https://github.com/apple/swift-nio.git",
         "state": {
           "branch": null,
-          "revision": "cf6f2b1807219643270616e03de697b96c46384c",
-          "version": "2.21.0"
+          "revision": "96db8838be60fcbb993fa738e1120fb7f4b99c43",
+          "version": "2.22.1"
         }
       },
       {
@@ -114,8 +114,8 @@
         "repositoryURL": "https://github.com/apple/swift-nio-extras.git",
         "state": {
           "branch": null,
-          "revision": "0b9eb87b227b37544e5b79090bd69e2156efcd24",
-          "version": "1.6.1"
+          "revision": "e5b5d191a80667a14827bfeb0ae4a511f7677942",
+          "version": "1.7.0"
         }
       },
       {
@@ -123,8 +123,8 @@
         "repositoryURL": "https://github.com/apple/swift-nio-http2.git",
         "state": {
           "branch": null,
-          "revision": "9f4eff06038a9d1301e939a55a0db935634a2f6e",
-          "version": "1.14.0"
+          "revision": "c7ad256b3e6f8d1da1e5d7ffc495d8fe2461f818",
+          "version": "1.14.2"
         }
       },
       {
@@ -132,8 +132,8 @@
         "repositoryURL": "https://github.com/apple/swift-nio-ssl.git",
         "state": {
           "branch": null,
-          "revision": "8a137b72a9339f295bc8bb95cd2fafe207f1df0d",
-          "version": "2.9.0"
+          "revision": "ea1dfd64193bf5af4490635a4a44c4fb43b1e1ae",
+          "version": "2.9.1"
         }
       },
       {
@@ -141,8 +141,8 @@
         "repositoryURL": "https://github.com/apple/swift-nio-transport-services.git",
         "state": {
           "branch": null,
-          "revision": "d40a5e34e5b35f4f961cb34aeb2e0a02f42a945f",
-          "version": "1.8.0"
+          "revision": "bb56586c4cab9a79dce6ec4738baddb5802c5de7",
+          "version": "1.9.0"
         }
       },
       {
@@ -150,8 +150,17 @@
         "repositoryURL": "https://github.com/swift-server/swift-service-lifecycle.git",
         "state": {
           "branch": "main",
-          "revision": "c8e99520d7070d2d7705ec8d34f810a64d0246e3",
+          "revision": "3a02d48c9521c26b2695374a7d90527df8ad5f80",
           "version": null
+        }
+      },
+      {
+        "package": "swift-w3c-trace-context",
+        "repositoryURL": "https://github.com/slashmo/swift-w3c-trace-context.git",
+        "state": {
+          "branch": null,
+          "revision": "34dee324fa9a73ff43397dd5bff42af8d207a01c",
+          "version": "0.4.0"
         }
       },
       {
@@ -159,8 +168,8 @@
         "repositoryURL": "https://github.com/vapor/vapor.git",
         "state": {
           "branch": null,
-          "revision": "d910be46835c4c0c5a432de5012b61bdea4695bb",
-          "version": "4.29.0"
+          "revision": "236c616ca1d781e9dc9b6a8f3f1e1427a326c161",
+          "version": "4.29.3"
         }
       },
       {

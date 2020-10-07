@@ -14,10 +14,11 @@ let package = Package(
         .package(url: "https://github.com/vapor/vapor.git", from: "4.0.0"),
         .package(url: "https://github.com/slashmo/gsoc-swift-tracing.git", .branch("main")),
         .package(
-            name: "swift-baggage-context",
+            name: "swift-context",
             url: "https://github.com/slashmo/gsoc-swift-baggage-context.git",
-            from: "0.3.0"
+            from: "0.5.0"
         ),
+        .package(path: "../../../../jaeger-client-swift"),
     ],
     targets: [
         .target(
@@ -26,11 +27,16 @@ let package = Package(
                 .product(name: "Vapor", package: "vapor"),
                 .product(name: "Instrumentation", package: "gsoc-swift-tracing"),
                 .product(name: "NIOInstrumentation", package: "gsoc-swift-tracing"),
-                .product(name: "TracingInstrumentation", package: "gsoc-swift-tracing"),
-                .product(name: "Baggage", package: "swift-baggage-context"),
-                .product(name: "BaggageLogging", package: "swift-baggage-context"),
+                .product(name: "Tracing", package: "gsoc-swift-tracing"),
+                .product(name: "OpenTelemetryInstrumentationSupport", package: "gsoc-swift-tracing"),
+                .product(name: "Baggage", package: "swift-context"),
             ]
         ),
-        .target(name: "Run", dependencies: [.target(name: "CustomerService")]),
+        .target(name: "Run", dependencies: [
+            .target(name: "CustomerService"),
+            .product(name: "Jaeger", package: "jaeger-client-swift"),
+            .product(name: "ZipkinRecordingStrategy", package: "jaeger-client-swift"),
+            .product(name: "Vapor", package: "vapor"),
+        ]),
     ]
 )

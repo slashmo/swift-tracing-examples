@@ -10,23 +10,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 //===----------------------------------------------------------------------===//
-import Baggage
+import BaggageContext
 import Instrumentation
 import NIOInstrumentation
 import OpenTelemetryInstrumentationSupport
-import TracingInstrumentation
+import Tracing
 import Vapor
 
 final class CustomerController {
     // Wraps `getCustomer(_ request: Request)` to trace the request.
     // TODO: note that this code can be either done internally in vapor or other instrumentation layers in the future
     private func getCustomerTraced(_ request: Request) -> EventLoopFuture<Response> {
-        var context = BaggageContext()
-        InstrumentationSystem.instrument.extract(request.headers, into: &context, using: HTTPHeadersExtractor())
+        var baggage = Baggage.topLevel
+        InstrumentationSystem.instrument.extract(request.headers, into: &baggage, using: HTTPHeadersExtractor())
 
-        var span = InstrumentationSystem.tracingInstrument.startSpan(
+        let span = InstrumentationSystem.tracer.startSpan(
             named: "HTTP \(request.method) \(request.url.string)",
-            context: context,
+            baggage: baggage,
             ofKind: .server
         )
         span.attributes.http.method = request.method.rawValue
@@ -41,7 +41,8 @@ final class CustomerController {
         }
 
         return self
-            .getCustomer(request, context: context)
+            // pass along the span.context as it may contain additional values compared to context
+            .getCustomer(request, baggage: span.baggage)
             .always { result in
                 switch result {
                 case .success(let response):
@@ -59,11 +60,11 @@ final class CustomerController {
             }
     }
 
-    private func getCustomer(_ request: Request, context: BaggageContext) -> EventLoopFuture<Response> {
+    private func getCustomer(_ request: Request, baggage: Baggage) -> EventLoopFuture<Response> {
         do {
             let customerID = try request.query.get(String.self, at: "customer")
             return CustomerDatabase()
-                .findCustomer(byID: customerID, context: .init(request: request, context: context))
+                .findCustomer(byID: customerID, context: .init(request: request, baggage: baggage))
                 .encodeResponse(status: .ok, for: request)
         } catch {
             return request.eventLoop.makeFailedFuture(Abort(.badRequest))

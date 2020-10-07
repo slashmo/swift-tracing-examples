@@ -1,0 +1,10 @@
+scrape_configs:
+  - job_name: 'frontend'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['frontend:8080']
+
+  - job_name: 'jaeger'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['jaeger:9002']

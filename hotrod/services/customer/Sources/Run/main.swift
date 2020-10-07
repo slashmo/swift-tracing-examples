@@ -10,9 +10,30 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 //===----------------------------------------------------------------------===//
-import CustomerService
 
-let service = try CustomerService()
+import CustomerService
+import Foundation
+import Instrumentation
+import Jaeger
+import NIO
+import Tracing
+import ZipkinRecordingStrategy
+
+let eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
+
+do {
+    let settings = JaegerTracer.Settings(
+        serviceName: "customer",
+        recordingStrategy: .zipkin(
+            collectorURL: "http://localhost:9411",
+            serviceName: "customer",
+            eventLoopGroup: eventLoopGroup
+        )
+    )
+    InstrumentationSystem.bootstrap(JaegerTracer(settings: settings, group: eventLoopGroup))
+}
+
+let service = try CustomerService(group: eventLoopGroup)
 
 defer { service.shutdown() }
 try service.start()

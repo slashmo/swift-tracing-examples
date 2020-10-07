@@ -48,7 +48,8 @@ final class LoggingTracer: TracingInstrument {
         using extractor: Extractor
     )
         where
-        Carrier == Extractor.Carrier, Extractor: ExtractorProtocol {
+        Carrier == Extractor.Carrier, Extractor: ExtractorProtocol
+    {
         if let traceID = extractor.extract(key: "x-trace-id", from: carrier) {
             context.traceID = traceID
         }
@@ -60,7 +61,8 @@ final class LoggingTracer: TracingInstrument {
         using injector: Injector
     )
         where
-        Carrier == Injector.Carrier, Injector: InjectorProtocol {
+        Carrier == Injector.Carrier, Injector: InjectorProtocol
+    {
         let traceID = context.traceID ?? "12345678-1234-1234-1234-123456789012"
         injector.inject(traceID, forKey: "x-trace-id", into: &carrier)
     }

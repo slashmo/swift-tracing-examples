@@ -18,8 +18,8 @@ import Vapor
 public struct CustomerService {
     private let app: Application
 
-    public init() throws {
-        self.app = try Application(.detect())
+    public init(group: EventLoopGroup) throws {
+        self.app = try Application(.detect(), .shared(group))
     }
 
     public func start() throws {

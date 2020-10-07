@@ -28,7 +28,7 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Lifecycle", package: "swift-service-lifecycle"),
                 .product(name: "Instrumentation", package: "gsoc-swift-tracing"),
-                .product(name: "TracingInstrumentation", package: "gsoc-swift-tracing"),
+                .product(name: "Tracing", package: "gsoc-swift-tracing"),
                 .product(name: "OpenTelemetryInstrumentationSupport", package: "gsoc-swift-tracing"),
                 .product(name: "Baggage", package: "swift-baggage-context"),
                 .product(name: "CustomerService", package: "customer"),

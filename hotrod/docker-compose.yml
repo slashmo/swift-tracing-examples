@@ -1,0 +1,44 @@
+version: '3.0'
+
+services:
+  # ==== ---------------------------------------------------------------------------------------------------------------
+  # MARK: Frontend (8000 - 8009)
+  frontend:
+    build:
+      context: services/frontend
+    ports:
+      - 8000:8080
+    depends_on:
+      - jaeger
+      - prometheus
+    networks:
+      - metrics
+      - tracing
+
+  # ==== ---------------------------------------------------------------------------------------------------------------
+  # MARK: Jager (9000 - 9009)
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - 9000:16686
+    networks:
+      - metrics
+      - tracing
+    environment:
+      COLLECTOR_ZIPKIN_HTTP_HOST_PORT: 9001
+      ADMIN_HTTP_PORT: 9002
+
+  # ==== ---------------------------------------------------------------------------------------------------------------
+  # MARK: Prometheus (9010 - 9019)
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - 9010:9090
+    volumes:
+      - ${PWD}/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - metrics
+
+networks:
+  tracing:
+  metrics:

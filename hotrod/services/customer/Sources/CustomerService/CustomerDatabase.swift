@@ -10,32 +10,32 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 //===----------------------------------------------------------------------===//
-import Baggage
-import BaggageLogging
+import BaggageContext
 import Instrumentation
-import TracingInstrumentation
+import Tracing
 import Vapor
 
 final class CustomerDatabase {
     func findCustomer(byID id: String, context: DatabaseContext) -> EventLoopFuture<Customer> {
         let promise = context.eventLoop.makePromise(of: Customer.self)
 
-        var span = InstrumentationSystem.tracingInstrument
-            .startSpan(named: "SQL SELECT", context: context, ofKind: .client)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+            let span = InstrumentationSystem.tracer.startSpan(named: "SQL SELECT", baggage: context.baggage, ofKind: .client)
 
-        // TODO: Add SQL semantics to OpenTelemetryInstrumentationSystem
-        span.attributes["sql.query"] = "SELECT * FROM customer WHERE customer_id=\(id)"
+            // TODO: Add SQL semantics to OpenTelemetryInstrumentationSystem
+            span.attributes["sql.query"] = "SELECT * FROM customer WHERE customer_id=\(id)"
 
-        // simulate SQL call
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
-            if let customer = Customer.allCases.first(where: { $0.id == id }) {
-                promise.succeed(customer)
-            } else {
-                let error = Abort(.notFound, reason: "No customer exists with the given ID.")
-                span.recordError(error)
-                promise.fail(error)
+            // simulate SQL call
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2.5) {
+                if let customer = Customer.allCases.first(where: { $0.id == id }) {
+                    promise.succeed(customer)
+                } else {
+                    let error = Abort(.notFound, reason: "No customer exists with the given ID.")
+                    span.recordError(error)
+                    promise.fail(error)
+                }
+                span.end()
             }
-            span.end()
         }
 
         return promise.futureResult
@@ -47,23 +47,23 @@ extension CustomerDatabase {
         private var _logger: Logger
 
         let eventLoop: EventLoop
-        var baggage: BaggageContext
+        var baggage: Baggage
 
-        init(request: Request, context: BaggageContext) {
+        init(request: Request, baggage: Baggage) {
             self.eventLoop = request.eventLoop
             self._logger = request.logger
-            self.baggage = context
+            self.baggage = baggage
         }
     }
 }
 
-extension CustomerDatabase.DatabaseContext: LoggingBaggageContextCarrier {
+extension CustomerDatabase.DatabaseContext: BaggageContext {
     var logger: Logger {
         get {
-            self._logger.with(context: self.baggage)
+            self._logger.with(self.baggage)
         }
         set(newValue) {
-            self._logger = newValue.with(context: self.baggage)
+            self._logger = newValue.with(self.baggage)
         }
     }
 }

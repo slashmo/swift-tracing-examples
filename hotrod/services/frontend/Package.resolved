@@ -2,21 +2,12 @@
   "object": {
     "pins": [
       {
-        "package": "async-http-client",
-        "repositoryURL": "https://github.com/slashmo/async-http-client.git",
-        "state": {
-          "branch": "feature/instrumentation",
-          "revision": "a24e79c1010d41819e189af38b4c3d1f50c458c3",
-          "version": null
-        }
-      },
-      {
-        "package": "swift-baggage-context",
+        "package": "swift-context",
         "repositoryURL": "https://github.com/slashmo/gsoc-swift-baggage-context.git",
         "state": {
           "branch": null,
-          "revision": "744d984ac940535287cb036e44e6970c2a93f012",
-          "version": "0.3.0"
+          "revision": "24e244b4aef3594ddceeecf0100da69ddafecee5",
+          "version": "0.5.0"
         }
       },
       {
@@ -24,8 +15,26 @@
         "repositoryURL": "https://github.com/slashmo/gsoc-swift-tracing.git",
         "state": {
           "branch": "main",
-          "revision": "fe80d764ad225b1dfd06dcb57d08b5e3485662f9",
+          "revision": "f639b29f95e1f1ebdcd18ff27e5dd9ed0957683b",
           "version": null
+        }
+      },
+      {
+        "package": "swift-argument-parser",
+        "repositoryURL": "https://github.com/apple/swift-argument-parser.git",
+        "state": {
+          "branch": null,
+          "revision": "92646c0cdbaca076c8d3d0207891785b3379cbff",
+          "version": "0.3.1"
+        }
+      },
+      {
+        "package": "swift-backtrace",
+        "repositoryURL": "https://github.com/swift-server/swift-backtrace.git",
+        "state": {
+          "branch": null,
+          "revision": "f2fd8c4845a123419c348e0bc4b3839c414077d5",
+          "version": "1.2.0"
         }
       },
       {
@@ -38,39 +47,39 @@
         }
       },
       {
+        "package": "swift-metrics",
+        "repositoryURL": "https://github.com/apple/swift-metrics.git",
+        "state": {
+          "branch": null,
+          "revision": "708b960b4605abb20bc55d65abf6bad607252200",
+          "version": "2.0.0"
+        }
+      },
+      {
         "package": "swift-nio",
         "repositoryURL": "https://github.com/slashmo/swift-nio.git",
         "state": {
           "branch": "feature/baggage-context",
-          "revision": "f604a10a368ba3cf998b3e5b8557900ea1e5e9fa",
+          "revision": "ad1bc154f5b6f3e9efcf4f30a61be2e134a4183a",
           "version": null
         }
       },
       {
-        "package": "swift-nio-extras",
-        "repositoryURL": "https://github.com/apple/swift-nio-extras.git",
+        "package": "swift-service-lifecycle",
+        "repositoryURL": "https://github.com/swift-server/swift-service-lifecycle.git",
         "state": {
           "branch": null,
-          "revision": "0b9eb87b227b37544e5b79090bd69e2156efcd24",
-          "version": "1.6.1"
+          "revision": "3a02d48c9521c26b2695374a7d90527df8ad5f80",
+          "version": "1.0.0-alpha.5"
         }
       },
       {
-        "package": "swift-nio-ssl",
-        "repositoryURL": "https://github.com/apple/swift-nio-ssl.git",
+        "package": "SwiftPrometheus",
+        "repositoryURL": "https://github.com/MrLotU/SwiftPrometheus.git",
         "state": {
           "branch": null,
-          "revision": "8a137b72a9339f295bc8bb95cd2fafe207f1df0d",
-          "version": "2.9.0"
-        }
-      },
-      {
-        "package": "swift-nio-transport-services",
-        "repositoryURL": "https://github.com/apple/swift-nio-transport-services.git",
-        "state": {
-          "branch": null,
-          "revision": "d40a5e34e5b35f4f961cb34aeb2e0a02f42a945f",
-          "version": "1.8.0"
+          "revision": "fa3d278e1475c1a4274da0a3abafa35daa3dab6b",
+          "version": "1.0.0-alpha.7"
         }
       }
     ]
