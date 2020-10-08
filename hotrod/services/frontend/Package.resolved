@@ -14,8 +14,17 @@
         "package": "gsoc-swift-tracing",
         "repositoryURL": "https://github.com/slashmo/gsoc-swift-tracing.git",
         "state": {
-          "branch": "fix/nio-handlers",
-          "revision": "ce1bb419f101e227d5f0f4938a0b76faf6b1535e",
+          "branch": "main",
+          "revision": "565d0e7bde20b48e92fe75e4c630643456488ac1",
+          "version": null
+        }
+      },
+      {
+        "package": "jaeger-client-swift",
+        "repositoryURL": "https://github.com/slashmo/jaeger-client-swift.git",
+        "state": {
+          "branch": "main",
+          "revision": "68e2c83a310d7f395ba29e77f5f01845faf5bbbe",
           "version": null
         }
       },
@@ -71,6 +80,15 @@
           "branch": null,
           "revision": "3a02d48c9521c26b2695374a7d90527df8ad5f80",
           "version": "1.0.0-alpha.5"
+        }
+      },
+      {
+        "package": "swift-w3c-trace-context",
+        "repositoryURL": "https://github.com/slashmo/swift-w3c-trace-context.git",
+        "state": {
+          "branch": null,
+          "revision": "34dee324fa9a73ff43397dd5bff42af8d207a01c",
+          "version": "0.4.0"
         }
       },
       {

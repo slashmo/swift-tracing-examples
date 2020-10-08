@@ -1,4 +1,2 @@
 .build/
-!.build/repositories/
-!.build/checkouts/
 .swiftpm/

@@ -6,7 +6,7 @@ services:
   frontend:
     build:
       context: services/frontend
-    entrypoint: ./Serve --host 0.0.0.0
+    entrypoint: ./Serve --host 0.0.0.0 --tracing.jaeger-host jaeger --tracing.zipkin-collector-port 9411
     ports:
       - 8000:8080
     depends_on:
@@ -26,7 +26,7 @@ services:
       - metrics
       - tracing
     environment:
-      COLLECTOR_ZIPKIN_HTTP_HOST_PORT: 9001
+      COLLECTOR_ZIPKIN_HTTP_PORT: 9411
       ADMIN_HTTP_PORT: 9002
 
   # ==== ---------------------------------------------------------------------------------------------------------------

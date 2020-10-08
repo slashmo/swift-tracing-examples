@@ -9,7 +9,6 @@ RUN apt-get -qq update && apt-get install -y \
 WORKDIR /app
 
 COPY Sources Sources
-COPY .build .build
 COPY Package.swift .
 COPY Package.resolved .
 

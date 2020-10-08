@@ -14,10 +14,13 @@
 import Admin
 import API
 import ArgumentParser
+import Instrumentation
+import Jaeger
 import Lifecycle
 import LifecycleNIOCompat
 import Logging
 import NIO
+import ZipkinRecordingStrategy
 
 struct Serve: ParsableCommand {
     @Option(name: .long, help: "The host which to run on")
@@ -32,12 +35,22 @@ struct Serve: ParsableCommand {
     @Option(name: .long, help: "The mininum log level")
     var logLevel: String = "info"
 
+    @Option(name: .customLong("tracing.jaeger-host"), help: "The host of the Jaeger tracer")
+    var jaegerHost: String?
+
+    @Option(
+        name: .customLong("tracing.zipkin-collector-port"),
+        help: "The port where the Zipkin collector is exposed on"
+    )
+    var zipkinCollectorPort: UInt?
+
     func run() throws {
-        self.bootstrapLoggingSystem()
-
         let eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
-        let lifecycle = self.serviceLifecycle(group: eventLoopGroup)
 
+        self.bootstrapLoggingSystem()
+        self.bootstrapInstrumentationSystem(group: eventLoopGroup)
+
+        let lifecycle = self.serviceLifecycle(group: eventLoopGroup)
         try lifecycle.startAndWait()
     }
 
@@ -49,6 +62,17 @@ struct Serve: ParsableCommand {
             }
             return handler
         }
+    }
+
+    private func bootstrapInstrumentationSystem(group: EventLoopGroup) {
+        guard let jaegerHost = self.jaegerHost, let zipkinCollectorPort = self.zipkinCollectorPort else { return }
+        let recordingStrategy = JaegerTracer.RecordingStrategy.zipkin(
+            collectorHost: jaegerHost,
+            collectorPort: zipkinCollectorPort,
+            eventLoopGroup: group
+        )
+        let jaegerSettings = JaegerTracer.Settings(serviceName: "frontend", recordingStrategy: recordingStrategy)
+        InstrumentationSystem.bootstrap(JaegerTracer(settings: jaegerSettings, group: group))
     }
 
     private func serviceLifecycle(group: EventLoopGroup) -> ServiceLifecycle {
