@@ -40,7 +40,11 @@ final class HTTPServerHandler: ChannelInboundHandler {
         switch self.unwrapInboundIn(data) {
         case .head(let requestHead):
             let operationName = "\(requestHead.method.rawValue) \(requestHead.uri)"
-            let span = InstrumentationSystem.tracer.startSpan(named: operationName, baggage: context.baggage, ofKind: .server)
+            let span = InstrumentationSystem.tracer.startSpan(
+                named: operationName,
+                baggage: context.baggage,
+                ofKind: .server
+            )
             let request = Request(head: requestHead, span: span)
             self.logger.info("\(operationName)")
             self.state.requestReceived(request)
@@ -48,6 +52,7 @@ final class HTTPServerHandler: ChannelInboundHandler {
             print(byteBuffer)
         case .end:
             let request = self.state.requestComplete()
+            context.fireChannelReadComplete()
 
             if request.head.uri == "/metrics" {
                 do {
@@ -62,8 +67,7 @@ final class HTTPServerHandler: ChannelInboundHandler {
                             ])
                             context.write(self.wrapOutboundOut(.head(responseHead)), promise: nil)
                             context.write(self.wrapOutboundOut(.body(.byteBuffer(buffer))), promise: nil)
-                            context.writeAndFlush(self.wrapOutboundOut(.end(nil)), promise: nil)
-                            self.state.responseComplete()
+                            self.state.responseComplete(context: context, endData: self.wrapOutboundOut(.end(nil)))
                         case .failure(let error):
                             self.logger.error("\(error)")
                         }
@@ -77,12 +81,9 @@ final class HTTPServerHandler: ChannelInboundHandler {
                     "Content-Type": "text/plain",
                     "Content-Length": "\(messageBuffer.readableBytes)",
                 ])
-                context.eventLoop.scheduleTask(in: .seconds(Int64.random(in: 0 ... 2))) {
-                    context.write(self.wrapOutboundOut(.head(responseHead)), promise: nil)
-                    context.write(self.wrapOutboundOut(.body(.byteBuffer(messageBuffer))), promise: nil)
-                    context.writeAndFlush(self.wrapOutboundOut(.end(nil)), promise: nil)
-                    self.state.responseComplete()
-                }
+                context.write(self.wrapOutboundOut(.head(responseHead)), promise: nil)
+                context.write(self.wrapOutboundOut(.body(.byteBuffer(messageBuffer))), promise: nil)
+                self.state.responseComplete(context: context, endData: self.wrapOutboundOut(.end(nil)))
             }
         }
     }
@@ -117,10 +118,17 @@ extension HTTPServerHandler {
             return request
         }
 
-        mutating func responseComplete() {
+        mutating func responseComplete(context: ChannelHandlerContext, endData: NIOAny) {
             guard case .sendingResponse(let request) = self else {
                 preconditionFailure("Invalid state for response complete: \(self)")
             }
+            let promise = context.eventLoop.makePromise(of: Void.self)
+            if !request.head.isKeepAlive {
+                promise.futureResult.whenComplete { _ in
+                    context.close(promise: nil)
+                }
+            }
+            context.writeAndFlush(endData, promise: promise)
             request.span.end()
             self = .idle
             Timer(
