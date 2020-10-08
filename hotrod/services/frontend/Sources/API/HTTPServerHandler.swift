@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift Tracing Examples open source project
 //
-// Copyright (c) YEARS Moritz Lang and the Swift Tracing Examples project authors
+// Copyright (c) 2020 Moritz Lang and the Swift Tracing Examples project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -13,17 +13,12 @@
 
 import Baggage
 import Dispatch
-import struct Foundation.UUID
 import Instrumentation
 import Logging
 import Metrics
 import NIO
 import NIOHTTP1
 import Tracing
-
-extension MetricsSystem {
-    public static var collect: (_ promise: EventLoopPromise<ByteBuffer>) throws -> Void = { _ in }
-}
 
 final class HTTPServerHandler: ChannelInboundHandler {
     typealias InboundIn = HTTPServerRequestPart
@@ -51,40 +46,16 @@ final class HTTPServerHandler: ChannelInboundHandler {
         case .body(let byteBuffer):
             print(byteBuffer)
         case .end:
-            let request = self.state.requestComplete()
+            self.state.requestComplete()
             context.fireChannelReadComplete()
-
-            if request.head.uri == "/metrics" {
-                do {
-                    let promise = context.eventLoop.makePromise(of: ByteBuffer.self)
-                    try MetricsSystem.collect(promise)
-                    promise.futureResult.whenComplete { result in
-                        switch result {
-                        case .success(let buffer):
-                            let responseHead = HTTPResponseHead(version: request.head.version, status: .ok, headers: [
-                                "Content-Type": "text/plain",
-                                "Content-Length": "\(buffer.readableBytes)",
-                            ])
-                            context.write(self.wrapOutboundOut(.head(responseHead)), promise: nil)
-                            context.write(self.wrapOutboundOut(.body(.byteBuffer(buffer))), promise: nil)
-                            self.state.responseComplete(context: context, endData: self.wrapOutboundOut(.end(nil)))
-                        case .failure(let error):
-                            self.logger.error("\(error)")
-                        }
-                    }
-                } catch {
-                    print(error)
-                }
-            } else {
-                let messageBuffer = context.channel.allocator.buffer(staticString: "Hello\n")
-                let responseHead = HTTPResponseHead(version: HTTPVersion(major: 1, minor: 1), status: .ok, headers: [
-                    "Content-Type": "text/plain",
-                    "Content-Length": "\(messageBuffer.readableBytes)",
-                ])
-                context.write(self.wrapOutboundOut(.head(responseHead)), promise: nil)
-                context.write(self.wrapOutboundOut(.body(.byteBuffer(messageBuffer))), promise: nil)
-                self.state.responseComplete(context: context, endData: self.wrapOutboundOut(.end(nil)))
-            }
+            let messageBuffer = context.channel.allocator.buffer(staticString: "Hello\n")
+            let responseHead = HTTPResponseHead(version: HTTPVersion(major: 1, minor: 1), status: .ok, headers: [
+                "Content-Type": "text/plain",
+                "Content-Length": "\(messageBuffer.readableBytes)",
+            ])
+            context.write(self.wrapOutboundOut(.head(responseHead)), promise: nil)
+            context.write(self.wrapOutboundOut(.body(.byteBuffer(messageBuffer))), promise: nil)
+            self.state.responseComplete(context: context, endData: self.wrapOutboundOut(.end(nil)))
         }
     }
 }
@@ -110,12 +81,11 @@ extension HTTPServerHandler {
             ).increment()
         }
 
-        mutating func requestComplete() -> Request {
+        mutating func requestComplete() {
             guard case .waitingForRequestBody(let request) = self else {
                 preconditionFailure("Invalid state for request complete: \(self)")
             }
             self = .sendingResponse(request)
-            return request
         }
 
         mutating func responseComplete(context: ChannelHandlerContext, endData: NIOAny) {
@@ -143,20 +113,19 @@ extension HTTPServerHandler {
     }
 }
 
-struct Request: Equatable, Identifiable {
-    let id: String
+struct Request: Equatable {
     let startTime: DispatchTime
     let head: HTTPRequestHead
     let span: Span
 
     init(head: HTTPRequestHead, span: Span) {
-        self.id = UUID().uuidString
         self.startTime = .now()
         self.head = head
         self.span = span
     }
 
     static func == (lhs: Request, rhs: Request) -> Bool {
-        lhs.id == rhs.id
+        lhs.startTime == rhs.startTime
+            && lhs.head == rhs.head
     }
 }

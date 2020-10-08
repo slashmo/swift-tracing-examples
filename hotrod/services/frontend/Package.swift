@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "frontend",
     products: [
-        .executable(name: "Frontend", targets: ["Run"]),
+        .executable(name: "Serve", targets: ["Serve"]),
     ],
     dependencies: [
         .package(
@@ -20,7 +20,13 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "0.3.1"),
     ],
     targets: [
-        .target(name: "App", dependencies: [
+        .target(name: "Admin", dependencies: [
+            .product(name: "NIO", package: "swift-nio"),
+            .product(name: "NIOHTTP1", package: "swift-nio"),
+            .product(name: "Metrics", package: "swift-metrics"),
+            .product(name: "SwiftPrometheus", package: "SwiftPrometheus"),
+        ]),
+        .target(name: "API", dependencies: [
             .product(name: "NIO", package: "swift-nio"),
             .product(name: "NIOHTTP1", package: "swift-nio"),
             .product(name: "BaggageContext", package: "swift-context"),
@@ -28,10 +34,9 @@ let package = Package(
             .product(name: "Tracing", package: "gsoc-swift-tracing"),
             .product(name: "NIOInstrumentation", package: "gsoc-swift-tracing"),
         ]),
-        .target(name: "Run", dependencies: [
-            .target(name: "App"),
-            .product(name: "Metrics", package: "swift-metrics"),
-            .product(name: "SwiftPrometheus", package: "SwiftPrometheus"),
+        .target(name: "Serve", dependencies: [
+            .target(name: "Admin"),
+            .target(name: "API"),
             .product(name: "ArgumentParser", package: "swift-argument-parser"),
             .product(name: "BaggageContext", package: "swift-context"),
             .product(name: "Lifecycle", package: "swift-service-lifecycle"),

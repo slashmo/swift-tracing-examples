@@ -6,6 +6,7 @@ services:
   frontend:
     build:
       context: services/frontend
+    entrypoint: ./Serve --host 0.0.0.0
     ports:
       - 8000:8080
     depends_on:

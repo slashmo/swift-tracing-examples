@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift Tracing Examples open source project
 //
-// Copyright (c) YEARS Moritz Lang and the Swift Tracing Examples project authors
+// Copyright (c) 2020 Moritz Lang and the Swift Tracing Examples project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -15,18 +15,17 @@ import Logging
 import NIO
 import NIOInstrumentation
 
-public final class Application {
+public final class APIService {
     private let eventLoopGroup: EventLoopGroup
     private let host: String
     private let port: UInt
 
-    private let logger: Logger
+    private let logger = Logger(label: "Frontend/API")
 
-    public init(eventLoopGroup: EventLoopGroup, host: String, port: UInt, logger: Logger) {
+    public init(eventLoopGroup: EventLoopGroup, host: String, port: UInt) {
         self.eventLoopGroup = eventLoopGroup
         self.host = host
         self.port = port
-        self.logger = logger
     }
 
     public func start() -> EventLoopFuture<Void> {
@@ -51,10 +50,11 @@ public final class Application {
             .childChannelOption(ChannelOptions.allowRemoteHalfClosure, value: true)
 
             // Bind the server to the specified address
-            .bind(host: self.host, port: Int(self.port)).map { _ in () }
+            .bind(host: self.host, port: Int(self.port))
             .always { result in
-                guard case .success = result else { return }
-                self.logger.info(#"Server listing on \#(self.host):\#(self.port)"#)
+                guard case .success(let channel) = result else { return }
+                self.logger.info(#"Server listing on \#(channel.localAddress!)"#)
             }
+            .map { _ in () }
     }
 }

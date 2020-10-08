@@ -39,15 +39,10 @@ RUN apt-get -qq update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
 
 WORKDIR /app
 
-COPY --from=builder /build/bin/Frontend .
+COPY --from=builder /build/bin/Serve .
 COPY --from=builder /build/lib/* /usr/lib/
-# COPY Public Public
-
-EXPOSE 8080
 
 ENTRYPOINT [ \
-  "./Frontend", \
-  "--host", "0.0.0.0", \
-  "--port", "8080", \
-  "--log-level", "trace" \
+  "./Serve", \
+  "--help" \
   ]
