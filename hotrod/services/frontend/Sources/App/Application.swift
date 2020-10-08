@@ -11,10 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-import Dispatch
 import Logging
 import NIO
-import NIOHTTP1
 import NIOInstrumentation
 
 public final class Application {
@@ -41,7 +39,7 @@ public final class Application {
             .childChannelInitializer { channel in
                 channel.pipeline.configureHTTPServerPipeline(withErrorHandling: true).flatMap {
                     channel.pipeline.addHandlers(
-                        //                        HTTPHeadersExtractingHandler(),
+                        HeaderExtractingHTTPServerHandler(),
                         HTTPServerHandler(logger: self.logger)
                     )
                 }

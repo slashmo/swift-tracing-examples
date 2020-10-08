@@ -14,8 +14,8 @@
         "package": "gsoc-swift-tracing",
         "repositoryURL": "https://github.com/slashmo/gsoc-swift-tracing.git",
         "state": {
-          "branch": "main",
-          "revision": "f639b29f95e1f1ebdcd18ff27e5dd9ed0957683b",
+          "branch": "fix/nio-handlers",
+          "revision": "ce1bb419f101e227d5f0f4938a0b76faf6b1535e",
           "version": null
         }
       },
