@@ -35,9 +35,13 @@ services:
     ports:
       - 9010:9090
     volumes:
-      - ${PWD}/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/:/etc/prometheus/
+      - prometheus_data:/prometheus
     networks:
       - metrics
+
+volumes:
+  prometheus_data: {}
 
 networks:
   tracing:
