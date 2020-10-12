@@ -88,11 +88,9 @@ final class HTTPServerHandler: ChannelInboundHandler {
 
         self.recordMetrics(forRequest: request, respondedWith: responseStatus)
 
-        context.eventLoop.scheduleTask(in: .seconds(2)) {
-            context.write(self.wrapOutboundOut(.head(responseHead)), promise: nil)
-            context.write(self.wrapOutboundOut(.body(.byteBuffer(messageBuffer))), promise: nil)
-            self.state.responseComplete(context: context, endData: self.wrapOutboundOut(.end(nil)))
-        }
+        context.write(self.wrapOutboundOut(.head(responseHead)), promise: nil)
+        context.write(self.wrapOutboundOut(.body(.byteBuffer(messageBuffer))), promise: nil)
+        self.state.responseComplete(context: context, endData: self.wrapOutboundOut(.end(nil)))
     }
 
     private func recordMetrics(forRequest request: Request, respondedWith status: HTTPResponseStatus) {

@@ -27,7 +27,7 @@ services:
       - tracing
     environment:
       COLLECTOR_ZIPKIN_HTTP_PORT: 9411
-      ADMIN_HTTP_PORT: 9002
+      ADMIN_HTTP_HOST_PORT: 0.0.0.0:9002
 
   # ==== ---------------------------------------------------------------------------------------------------------------
   # MARK: Prometheus (9010 - 9019)

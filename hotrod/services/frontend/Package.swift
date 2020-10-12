@@ -44,7 +44,7 @@ let package = Package(
             .product(name: "Lifecycle", package: "swift-service-lifecycle"),
             .product(name: "LifecycleNIOCompat", package: "swift-service-lifecycle"),
             .product(name: "Jaeger", package: "jaeger-client-swift"),
-            .product(name: "ZipkinRecordingStrategy", package: "jaeger-client-swift"),
+            .product(name: "ZipkinReporting", package: "jaeger-client-swift"),
         ]),
     ]
 )

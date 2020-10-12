@@ -20,7 +20,7 @@ import Lifecycle
 import LifecycleNIOCompat
 import Logging
 import NIO
-import ZipkinRecordingStrategy
+import ZipkinReporting
 
 struct Serve: ParsableCommand {
     @Option(name: .long, help: "The host which to run on")
@@ -66,12 +66,13 @@ struct Serve: ParsableCommand {
 
     private func bootstrapInstrumentationSystem(group: EventLoopGroup) {
         guard let jaegerHost = self.jaegerHost, let zipkinCollectorPort = self.zipkinCollectorPort else { return }
-        let recordingStrategy = JaegerTracer.RecordingStrategy.zipkin(
+        let zipkinReporter = JaegerTracer.Reporter.zipkin(
             collectorHost: jaegerHost,
             collectorPort: zipkinCollectorPort,
+            userAgent: "Fronted Service Tracing / Zipkin Reporter",
             eventLoopGroup: group
         )
-        let jaegerSettings = JaegerTracer.Settings(serviceName: "frontend", recordingStrategy: recordingStrategy)
+        let jaegerSettings = JaegerTracer.Settings(serviceName: "frontend", reporter: zipkinReporter)
         InstrumentationSystem.bootstrap(JaegerTracer(settings: jaegerSettings, group: group))
     }
 
