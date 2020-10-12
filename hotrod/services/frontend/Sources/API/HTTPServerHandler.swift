@@ -37,9 +37,11 @@ final class HTTPServerHandler: ChannelInboundHandler {
         case .head(let requestHead):
             self.receiveRequest(head: requestHead, context: context)
         case .body(let byteBuffer):
-            guard case .waitingForRequestBody(let request) = self.state else { return }
-            request.span.attributes.http.requestContentLength = byteBuffer.readableBytes
+            guard case .waitingForRequestBody(_, _, let span) = self.state else { return }
+            span.attributes.http.requestContentLength = byteBuffer.readableBytes
         case .end:
+            context.fireChannelReadComplete()
+            self.state.requestComplete()
             self.completeResponse(context: context)
         }
     }
@@ -65,82 +67,90 @@ final class HTTPServerHandler: ChannelInboundHandler {
                 span.attributes.http.serverName = host
             }
         }
-        let request = Request(head: head, span: span)
         self.logger.info("\(operationName)")
-        self.state.requestReceived(request)
+        self.state.requestReceived(head, span: span)
     }
 
     private func completeResponse(context: ChannelHandlerContext) {
-        context.fireChannelReadComplete()
+        guard case .sendingResponse(let requestHead, let start, let span) = self.state else { return }
 
-        let request = self.state.requestComplete()
         let responseStatus = HTTPResponseStatus.ok
 
         let messageBuffer = context.channel.allocator.buffer(staticString: "Hello\n")
-        let responseHead = HTTPResponseHead(version: request.head.version, status: responseStatus, headers: [
+        let responseHead = HTTPResponseHead(version: requestHead.version, status: responseStatus, headers: [
             "Content-Type": "text/plain",
             "Content-Length": "\(messageBuffer.readableBytes)",
         ])
 
-        request.span.attributes.http.statusCode = Int(responseStatus.code)
-        request.span.attributes.http.statusText = responseStatus.reasonPhrase
-        request.span.attributes.http.responseContentLength = messageBuffer.readableBytes
-
-        self.recordMetrics(forRequest: request, respondedWith: responseStatus)
+        span.attributes.http.statusCode = Int(responseStatus.code)
+        span.attributes.http.statusText = responseStatus.reasonPhrase
+        span.attributes.http.responseContentLength = messageBuffer.readableBytes
 
         context.write(self.wrapOutboundOut(.head(responseHead)), promise: nil)
         context.write(self.wrapOutboundOut(.body(.byteBuffer(messageBuffer))), promise: nil)
-        self.state.responseComplete(context: context, endData: self.wrapOutboundOut(.end(nil)))
-    }
 
-    private func recordMetrics(forRequest request: Request, respondedWith status: HTTPResponseStatus) {
-        let dimensions = [
-            ("method", request.head.method.rawValue),
-            ("path", request.head.uri),
-            ("status", "\(status.code)"),
-        ]
+        let promise = context.eventLoop.makePromise(of: Void.self)
+        promise.futureResult.whenComplete { _ in
+            span.end()
 
-        Counter(label: "http_requests_total", dimensions: dimensions).increment()
+            let dimensions = [
+                ("method", requestHead.method.rawValue),
+                ("path", requestHead.uri),
+                ("status", "\(responseStatus.code)"),
+            ]
 
-        Timer(
-            label: "http_request_duration_seconds",
-            dimensions: dimensions,
-            preferredDisplayUnit: .seconds
-        ).recordNanoseconds(DispatchTime.now().uptimeNanoseconds - request.startTime.uptimeNanoseconds)
+            Counter(label: "http_requests_total", dimensions: dimensions).increment()
+
+            Timer(
+                label: "http_request_duration_seconds",
+                dimensions: dimensions,
+                preferredDisplayUnit: .seconds
+            ).recordNanoseconds(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds)
+
+            self.state.responseComplete(context: context, status: responseStatus)
+
+            if !requestHead.isKeepAlive {
+                context.close(promise: nil)
+            }
+        }
+        context.writeAndFlush(NIOAny(HTTPServerResponsePart.end(nil)), promise: promise)
     }
 }
 
 extension HTTPServerHandler {
     private enum State: Equatable {
-        case idle
-        case waitingForRequestBody(Request)
-        case sendingResponse(Request)
-
-        mutating func requestReceived(_ request: Request) {
-            precondition(self == .idle, "Invalid state for request received: \(self)")
-            self = .waitingForRequestBody(request)
+        static func == (lhs: HTTPServerHandler.State, rhs: HTTPServerHandler.State) -> Bool {
+            switch (lhs, rhs) {
+            case (.idle, .idle): return true
+            case (.waitingForRequestBody(let lhsHead, let lhsStart, _), .waitingForRequestBody(let rhsHead, let rhsStart, _)),
+                 let (.sendingResponse(lhsHead, lhsStart, _), .sendingResponse(rhsHead, rhsStart, _)):
+                return lhsHead == rhsHead
+                    && lhsStart == rhsStart
+            default:
+                return false
+            }
         }
 
-        mutating func requestComplete() -> Request {
-            guard case .waitingForRequestBody(let request) = self else {
+        case idle
+        case waitingForRequestBody(head: HTTPRequestHead, start: DispatchTime, span: Span)
+        case sendingResponse(head: HTTPRequestHead, start: DispatchTime, span: Span)
+
+        mutating func requestReceived(_ requestHead: HTTPRequestHead, span: Span) {
+            precondition(self == .idle, "Invalid state for request received: \(self)")
+            self = .waitingForRequestBody(head: requestHead, start: .now(), span: span)
+        }
+
+        mutating func requestComplete() {
+            guard case .waitingForRequestBody(let head, let start, let span) = self else {
                 preconditionFailure("Invalid state for request complete: \(self)")
             }
-            self = .sendingResponse(request)
-            return request
+            self = .sendingResponse(head: head, start: start, span: span)
         }
 
-        mutating func responseComplete(context: ChannelHandlerContext, endData: NIOAny) {
-            guard case .sendingResponse(let request) = self else {
+        mutating func responseComplete(context: ChannelHandlerContext, status: HTTPResponseStatus) {
+            guard case .sendingResponse = self else {
                 preconditionFailure("Invalid state for response complete: \(self)")
             }
-            let promise = context.eventLoop.makePromise(of: Void.self)
-            if !request.head.isKeepAlive {
-                promise.futureResult.whenComplete { _ in
-                    context.close(promise: nil)
-                }
-            }
-            context.writeAndFlush(endData, promise: promise)
-            request.span.end()
             self = .idle
         }
     }
