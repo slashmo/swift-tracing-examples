@@ -66,7 +66,7 @@ struct Serve: ParsableCommand {
 
     private func bootstrapInstrumentationSystem(group: EventLoopGroup) {
         guard let jaegerHost = self.jaegerHost, let zipkinCollectorPort = self.zipkinCollectorPort else { return }
-        let zipkinReporter = JaegerTracer.Reporter.zipkin(
+        let zipkinReporter = JaegerTracer.Reporter.zipkinv2(
             collectorHost: jaegerHost,
             collectorPort: zipkinCollectorPort,
             userAgent: "Fronted Service Tracing / Zipkin Reporter",
