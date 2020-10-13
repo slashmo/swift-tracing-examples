@@ -39,6 +39,7 @@ RUN apt-get -qq update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
 WORKDIR /app
 
 COPY --from=builder /build/bin/Serve .
+COPY Public Public
 COPY --from=builder /build/lib/* /usr/lib/
 
 ENTRYPOINT [ \

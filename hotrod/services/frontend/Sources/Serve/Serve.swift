@@ -46,11 +46,13 @@ struct Serve: ParsableCommand {
 
     func run() throws {
         let eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
+        let threadPool = NIOThreadPool(numberOfThreads: System.coreCount)
+        threadPool.start()
 
         self.bootstrapLoggingSystem()
         self.bootstrapInstrumentationSystem(group: eventLoopGroup)
 
-        let lifecycle = self.serviceLifecycle(group: eventLoopGroup)
+        let lifecycle = self.serviceLifecycle(group: eventLoopGroup, fileIO: NonBlockingFileIO(threadPool: threadPool))
         try lifecycle.startAndWait()
     }
 
@@ -76,9 +78,9 @@ struct Serve: ParsableCommand {
         InstrumentationSystem.bootstrap(JaegerTracer(settings: jaegerSettings, group: group))
     }
 
-    private func serviceLifecycle(group: EventLoopGroup) -> ServiceLifecycle {
+    private func serviceLifecycle(group: EventLoopGroup, fileIO: NonBlockingFileIO) -> ServiceLifecycle {
         let admin = AdminService(eventLoopGroup: group, host: self.host, port: self.adminPort)
-        let api = APIService(eventLoopGroup: group, host: self.host, port: self.port)
+        let api = APIService(eventLoopGroup: group, fileIO: fileIO, host: self.host, port: self.port)
 
         let lifecycle = ServiceLifecycle()
         lifecycle.register(label: "admin", start: .eventLoopFuture(admin.start), shutdown: .none)

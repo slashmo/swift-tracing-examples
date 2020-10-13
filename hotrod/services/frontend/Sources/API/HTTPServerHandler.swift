@@ -21,14 +21,18 @@ import NIOHTTP1
 import OpenTelemetryInstrumentationSupport
 import Tracing
 
+typealias Responder = (HTTPRequestHead, ChannelHandlerContext) -> EventLoopFuture<HTTPResponseHead>
+
 final class HTTPServerHandler: ChannelInboundHandler {
     typealias InboundIn = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
 
+    private let responder: Responder
     private let logger: Logger
     private var state = State.idle
 
-    init(logger: Logger) {
+    init(responder: @escaping Responder, logger: Logger) {
+        self.responder = responder
         self.logger = logger
     }
 
@@ -37,12 +41,19 @@ final class HTTPServerHandler: ChannelInboundHandler {
         case .head(let requestHead):
             self.receiveRequest(head: requestHead, context: context)
         case .body(let byteBuffer):
-            guard case .waitingForRequestBody(_, _, let span) = self.state else { return }
+            guard case .waitingForRequestBody(_, _, let span) = self.state else {
+                context.close(promise: nil)
+                return
+            }
             span.attributes.http.requestContentLength = byteBuffer.readableBytes
         case .end:
             context.fireChannelReadComplete()
             self.state.requestComplete()
-            self.completeResponse(context: context)
+            guard case .sendingResponse(let head, let start, let span) = self.state else {
+                context.close(promise: nil)
+                return
+            }
+            self.handleRequest(head, startedAt: start, span: span, context: context)
         }
     }
 
@@ -59,7 +70,7 @@ final class HTTPServerHandler: ChannelInboundHandler {
         span.attributes.http.serverRoute = head.uri
         span.attributes.http.serverClientIP = context.remoteAddress?.ipAddress
         span.attributes.net.peerIP = context.remoteAddress?.ipAddress
-        span.attributes.http.userAgent = head.headers.first(name: "user-agent")
+        span.attributes.http.userAgent = head.headers.first(name: "User-Agent")
         if let localAddress = context.localAddress, let port = localAddress.port {
             span.attributes.net.hostPort = port
             if let host = localAddress.ipAddress {
@@ -71,61 +82,84 @@ final class HTTPServerHandler: ChannelInboundHandler {
         self.state.requestReceived(head, span: span)
     }
 
-    private func completeResponse(context: ChannelHandlerContext) {
-        guard case .sendingResponse(let requestHead, let start, let span) = self.state else { return }
-
-        let responseStatus = HTTPResponseStatus.ok
-
-        let messageBuffer = context.channel.allocator.buffer(staticString: "Hello\n")
-        let responseHead = HTTPResponseHead(version: requestHead.version, status: responseStatus, headers: [
-            "Content-Type": "text/plain",
-            "Content-Length": "\(messageBuffer.readableBytes)",
-        ])
-
-        span.attributes.http.statusCode = Int(responseStatus.code)
-        span.attributes.http.statusText = responseStatus.reasonPhrase
-        span.attributes.http.responseContentLength = messageBuffer.readableBytes
-
-        context.write(self.wrapOutboundOut(.head(responseHead)), promise: nil)
-        context.write(self.wrapOutboundOut(.body(.byteBuffer(messageBuffer))), promise: nil)
-
-        let promise = context.eventLoop.makePromise(of: Void.self)
-        promise.futureResult.whenComplete { _ in
-            span.end()
-
-            let dimensions = [
-                ("method", requestHead.method.rawValue),
-                ("path", requestHead.uri),
-                ("status", "\(responseStatus.code)"),
-            ]
-
-            Counter(label: "http_requests_total", dimensions: dimensions).increment()
-
-            Timer(
-                label: "http_request_duration_seconds",
-                dimensions: dimensions,
-                preferredDisplayUnit: .seconds
-            ).recordNanoseconds(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds)
-
-            self.state.responseComplete(context: context, status: responseStatus)
-
-            if !requestHead.isKeepAlive {
-                context.close(promise: nil)
+    private func handleRequest(
+        _ requestHead: HTTPRequestHead,
+        startedAt startTime: DispatchTime,
+        span: Span,
+        context: ChannelHandlerContext
+    ) {
+        self.responder(requestHead, context)
+            .flatMapError { error in
+                span.recordError(error)
+                let status: HTTPResponseStatus
+                if let ioError = error as? IOError, ioError.errnoCode == 2 {
+                    status = .notFound
+                } else {
+                    status = .internalServerError
+                }
+                let responseHead = HTTPResponseHead(version: requestHead.version, status: status)
+                context.write(self.wrapOutboundOut(.head(responseHead)), promise: nil)
+                return context.writeAndFlush(self.wrapOutboundOut(.end(nil))).map { responseHead }
             }
+            .always { result in
+                guard case .success(let responseHead) = result else { return }
+                self.endSpan(span, withResponse: responseHead)
+                self.recordMetrics(forRequest: requestHead, responseHead: responseHead, startTime: startTime)
+            }
+            .whenComplete { _ in
+                if !requestHead.isKeepAlive {
+                    context.close(promise: nil)
+                }
+                self.state.responseComplete()
+            }
+    }
+
+    private func endSpan(_ span: Span, withResponse responseHead: HTTPResponseHead) {
+        span.attributes.http.statusCode = Int(responseHead.status.code)
+        span.attributes.http.statusText = responseHead.status.reasonPhrase
+        if let contentLength = responseHead.headers.first(name: "Content-Length").flatMap(Int.init) {
+            span.attributes.http.responseContentLength = contentLength
         }
-        context.writeAndFlush(NIOAny(HTTPServerResponsePart.end(nil)), promise: promise)
+        span.end()
+    }
+
+    private func recordMetrics(
+        forRequest requestHead: HTTPRequestHead,
+        responseHead: HTTPResponseHead,
+        startTime: DispatchTime
+    ) {
+        let dimensions = [
+            ("method", requestHead.method.rawValue),
+            ("path", requestHead.uri),
+            ("status", "\(responseHead.status.code)"),
+        ]
+
+        Counter(label: "http_requests_total", dimensions: dimensions).increment()
+
+        Timer(
+            label: "http_request_duration_seconds",
+            dimensions: dimensions,
+            preferredDisplayUnit: .seconds
+        ).recordNanoseconds(DispatchTime.now().uptimeNanoseconds - startTime.uptimeNanoseconds)
     }
 }
+
+// MARK: - Request state machine
 
 extension HTTPServerHandler {
     private enum State: Equatable {
         static func == (lhs: HTTPServerHandler.State, rhs: HTTPServerHandler.State) -> Bool {
             switch (lhs, rhs) {
             case (.idle, .idle): return true
-            case (.waitingForRequestBody(let lhsHead, let lhsStart, _), .waitingForRequestBody(let rhsHead, let rhsStart, _)),
-                 let (.sendingResponse(lhsHead, lhsStart, _), .sendingResponse(rhsHead, rhsStart, _)):
-                return lhsHead == rhsHead
-                    && lhsStart == rhsStart
+            case (
+                .waitingForRequestBody(let lhsHead, let lhsStart, _),
+                .waitingForRequestBody(let rhsHead, let rhsStart, _)
+            ),
+            (
+                .sendingResponse(let lhsHead, let lhsStart, _),
+                .sendingResponse(let rhsHead, let rhsStart, _)
+            ):
+                return lhsHead == rhsHead && lhsStart == rhsStart
             default:
                 return false
             }
@@ -147,7 +181,7 @@ extension HTTPServerHandler {
             self = .sendingResponse(head: head, start: start, span: span)
         }
 
-        mutating func responseComplete(context: ChannelHandlerContext, status: HTTPResponseStatus) {
+        mutating func responseComplete() {
             guard case .sendingResponse = self else {
                 preconditionFailure("Invalid state for response complete: \(self)")
             }

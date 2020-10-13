@@ -65,7 +65,7 @@ private final class MetricsHTTPServerHandler: ChannelInboundHandler {
         case .head(let requestHead):
             self.state.requestReceived(requestHead)
         case .body:
-            print("Body")
+            break
         case .end:
             let requestHead = self.state.requestComplete()
             switch requestHead.uri {
