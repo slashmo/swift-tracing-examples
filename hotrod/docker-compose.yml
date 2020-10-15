@@ -6,9 +6,9 @@ services:
   frontend:
     build:
       context: services/frontend
-    entrypoint: ./Serve --host 0.0.0.0 --tracing.jaeger-host jaeger --tracing.zipkin-collector-port 9411
+    entrypoint: ./Serve --host 0.0.0.0 --port 8000 --tracing.jaeger-host jaeger --tracing.zipkin-collector-port 9411
     ports:
-      - 8000:8080
+      - 8000:8000
     depends_on:
       - jaeger
       - prometheus

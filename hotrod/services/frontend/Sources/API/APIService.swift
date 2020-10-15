@@ -11,10 +11,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+import struct Foundation.URLComponents
+import Instrumentation
 import Logging
 import NIO
 import NIOHTTP1
 import NIOInstrumentation
+import Tracing
 
 public final class APIService {
     private let eventLoopGroup: EventLoopGroup
@@ -68,9 +71,50 @@ extension APIService {
             .bind(host: self.host, port: Int(self.port))
     }
 
-    private func respond(head: HTTPRequestHead, context: ChannelHandlerContext) -> EventLoopFuture<HTTPResponseHead> {
-        let path = self.htdocsPath + (head.uri == "/" ? "/index.html" : head.uri)
-        return self.serveFile(path: path, version: head.version, context: context)
+    private func respond(request: Request, context: ChannelHandlerContext) -> EventLoopFuture<HTTPResponseHead> {
+        if request.urlComponents.path == "/dispatch" {
+            return self.dispatchDriver(request: request, context: context)
+        }
+        let path = self.htdocsPath + (request.urlComponents.path == "/" ? "/index.html" : request.urlComponents.path)
+        return self.serveFile(path: path, version: request.head.version, context: context)
+    }
+}
+
+// MARK: - Dispatch Driver
+
+extension APIService {
+    private func dispatchDriver(request: Request, context: ChannelHandlerContext) -> EventLoopFuture<HTTPResponseHead> {
+        guard let customerID = request.urlComponents.queryItems?.first(where: { $0.name == "customer" })?.value else {
+            let responseHead = HTTPResponseHead(version: request.head.version, status: .badRequest)
+            context.write(NIOAny(HTTPServerResponsePart.head(responseHead)), promise: nil)
+            return context.writeAndFlush(NIOAny(HTTPServerResponsePart.end(nil))).map { responseHead }
+        }
+        self.logger.info("Finding nearest driver for customer: \(customerID)")
+
+        let clientSpan = InstrumentationSystem.tracer.startSpan(
+            named: "GET /customer",
+            baggage: request.baggage,
+            ofKind: .client
+        )
+        clientSpan.attributes.http.method = HTTPMethod.GET.rawValue
+        clientSpan.attributes.http.scheme = "http"
+        clientSpan.attributes.http.target = "/customer"
+
+        clientSpan.addLink(SpanLink(baggage: request.baggage))
+
+        return context.eventLoop.flatScheduleTask(in: .seconds(1)) {
+            let buffer = context.channel.allocator.buffer(string: #"{"Driver":"🐢","ETA":50000000000}"#)
+            let responseHead = HTTPResponseHead(version: request.head.version, status: .ok, headers: [
+                "Content-Type": "application/json",
+                "Content-Length": "\(buffer.readableBytes)",
+            ])
+            context.write(NIOAny(HTTPServerResponsePart.head(responseHead)), promise: nil)
+            context.write(NIOAny(HTTPServerResponsePart.body(.byteBuffer(buffer))), promise: nil)
+            clientSpan.attributes.http.statusCode = Int(HTTPResponseStatus.ok.code)
+            clientSpan.attributes.http.statusText = HTTPResponseStatus.ok.reasonPhrase
+            clientSpan.end()
+            return context.writeAndFlush(NIOAny(HTTPServerResponsePart.end(nil))).map { responseHead }
+        }.futureResult
     }
 }
 

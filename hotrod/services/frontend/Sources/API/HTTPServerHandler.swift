@@ -13,6 +13,7 @@
 
 import Baggage
 import Dispatch
+import struct Foundation.URLComponents
 import Instrumentation
 import Logging
 import Metrics
@@ -21,7 +22,7 @@ import NIOHTTP1
 import OpenTelemetryInstrumentationSupport
 import Tracing
 
-typealias Responder = (HTTPRequestHead, ChannelHandlerContext) -> EventLoopFuture<HTTPResponseHead>
+typealias Responder = (Request, ChannelHandlerContext) -> EventLoopFuture<HTTPResponseHead>
 
 final class HTTPServerHandler: ChannelInboundHandler {
     typealias InboundIn = HTTPServerRequestPart
@@ -39,7 +40,16 @@ final class HTTPServerHandler: ChannelInboundHandler {
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         switch self.unwrapInboundIn(data) {
         case .head(let requestHead):
-            self.receiveRequest(head: requestHead, context: context)
+            let urlComponents = URLComponents(string: requestHead.uri)!
+            let operationName = "\(requestHead.method.rawValue) \(urlComponents.path)"
+            self.logger.info("\(operationName)")
+            let span = InstrumentationSystem.tracer.startSpan(
+                named: operationName,
+                baggage: context.baggage,
+                ofKind: .server
+            )
+            let request = Request(head: requestHead, urlComponents: urlComponents, baggage: span.baggage)
+            self.receiveRequest(request, span: span, context: context)
         case .body(let byteBuffer):
             guard case .waitingForRequestBody(_, _, let span) = self.state else {
                 context.close(promise: nil)
@@ -49,28 +59,22 @@ final class HTTPServerHandler: ChannelInboundHandler {
         case .end:
             context.fireChannelReadComplete()
             self.state.requestComplete()
-            guard case .sendingResponse(let head, let start, let span) = self.state else {
+            guard case .sendingResponse(let request, let start, let span) = self.state else {
                 context.close(promise: nil)
                 return
             }
-            self.handleRequest(head, startedAt: start, span: span, context: context)
+            self.handleRequest(request, startedAt: start, span: span, context: context)
         }
     }
 
-    private func receiveRequest(head: HTTPRequestHead, context: ChannelHandlerContext) {
-        let operationName = "\(head.method.rawValue) \(head.uri)"
-        let span = InstrumentationSystem.tracer.startSpan(
-            named: operationName,
-            baggage: context.baggage,
-            ofKind: .server
-        )
-        span.attributes.http.method = head.method.rawValue
-        span.attributes.http.flavor = "\(head.version.major).\(head.version.minor)"
-        span.attributes.http.target = head.uri
-        span.attributes.http.serverRoute = head.uri
+    private func receiveRequest(_ request: Request, span: Span, context: ChannelHandlerContext) {
+        span.attributes.http.method = request.head.method.rawValue
+        span.attributes.http.flavor = "\(request.head.version.major).\(request.head.version.minor)"
+        span.attributes.http.target = request.urlComponents.path
+        span.attributes.http.serverRoute = request.urlComponents.path
         span.attributes.http.serverClientIP = context.remoteAddress?.ipAddress
         span.attributes.net.peerIP = context.remoteAddress?.ipAddress
-        span.attributes.http.userAgent = head.headers.first(name: "User-Agent")
+        span.attributes.http.userAgent = request.head.headers.first(name: "User-Agent")
         if let localAddress = context.localAddress, let port = localAddress.port {
             span.attributes.net.hostPort = port
             if let host = localAddress.ipAddress {
@@ -78,17 +82,16 @@ final class HTTPServerHandler: ChannelInboundHandler {
                 span.attributes.http.serverName = host
             }
         }
-        self.logger.info("\(operationName)")
-        self.state.requestReceived(head, span: span)
+        self.state.requestReceived(request, span: span)
     }
 
     private func handleRequest(
-        _ requestHead: HTTPRequestHead,
+        _ request: Request,
         startedAt startTime: DispatchTime,
         span: Span,
         context: ChannelHandlerContext
     ) {
-        self.responder(requestHead, context)
+        self.responder(request, context)
             .flatMapError { error in
                 span.recordError(error)
                 let status: HTTPResponseStatus
@@ -97,17 +100,17 @@ final class HTTPServerHandler: ChannelInboundHandler {
                 } else {
                     status = .internalServerError
                 }
-                let responseHead = HTTPResponseHead(version: requestHead.version, status: status)
+                let responseHead = HTTPResponseHead(version: request.head.version, status: status)
                 context.write(self.wrapOutboundOut(.head(responseHead)), promise: nil)
                 return context.writeAndFlush(self.wrapOutboundOut(.end(nil))).map { responseHead }
             }
             .always { result in
                 guard case .success(let responseHead) = result else { return }
                 self.endSpan(span, withResponse: responseHead)
-                self.recordMetrics(forRequest: requestHead, responseHead: responseHead, startTime: startTime)
+                self.recordMetrics(forRequest: request, responseHead: responseHead, startTime: startTime)
             }
             .whenComplete { _ in
-                if !requestHead.isKeepAlive {
+                if !request.head.isKeepAlive {
                     context.close(promise: nil)
                 }
                 self.state.responseComplete()
@@ -124,13 +127,13 @@ final class HTTPServerHandler: ChannelInboundHandler {
     }
 
     private func recordMetrics(
-        forRequest requestHead: HTTPRequestHead,
+        forRequest request: Request,
         responseHead: HTTPResponseHead,
         startTime: DispatchTime
     ) {
         let dimensions = [
-            ("method", requestHead.method.rawValue),
-            ("path", requestHead.uri),
+            ("method", request.head.method.rawValue),
+            ("path", request.head.uri),
             ("status", "\(responseHead.status.code)"),
         ]
 
@@ -152,33 +155,33 @@ extension HTTPServerHandler {
             switch (lhs, rhs) {
             case (.idle, .idle): return true
             case (
-                .waitingForRequestBody(let lhsHead, let lhsStart, _),
-                .waitingForRequestBody(let rhsHead, let rhsStart, _)
+                .waitingForRequestBody(let lhsRequest, let lhsStart, _),
+                .waitingForRequestBody(let rhsRequest, let rhsStart, _)
             ),
             (
-                .sendingResponse(let lhsHead, let lhsStart, _),
-                .sendingResponse(let rhsHead, let rhsStart, _)
+                .sendingResponse(let lhsRequest, let lhsStart, _),
+                .sendingResponse(let rhsRequest, let rhsStart, _)
             ):
-                return lhsHead == rhsHead && lhsStart == rhsStart
+                return lhsRequest == rhsRequest && lhsStart == rhsStart
             default:
                 return false
             }
         }
 
         case idle
-        case waitingForRequestBody(head: HTTPRequestHead, start: DispatchTime, span: Span)
-        case sendingResponse(head: HTTPRequestHead, start: DispatchTime, span: Span)
+        case waitingForRequestBody(request: Request, start: DispatchTime, span: Span)
+        case sendingResponse(request: Request, start: DispatchTime, span: Span)
 
-        mutating func requestReceived(_ requestHead: HTTPRequestHead, span: Span) {
+        mutating func requestReceived(_ request: Request, span: Span) {
             precondition(self == .idle, "Invalid state for request received: \(self)")
-            self = .waitingForRequestBody(head: requestHead, start: .now(), span: span)
+            self = .waitingForRequestBody(request: request, start: .now(), span: span)
         }
 
         mutating func requestComplete() {
-            guard case .waitingForRequestBody(let head, let start, let span) = self else {
+            guard case .waitingForRequestBody(let request, let start, let span) = self else {
                 preconditionFailure("Invalid state for request complete: \(self)")
             }
-            self = .sendingResponse(head: head, start: start, span: span)
+            self = .sendingResponse(request: request, start: start, span: span)
         }
 
         mutating func responseComplete() {
@@ -187,5 +190,15 @@ extension HTTPServerHandler {
             }
             self = .idle
         }
+    }
+}
+
+struct Request: Equatable {
+    let head: HTTPRequestHead
+    let urlComponents: URLComponents
+    let baggage: Baggage
+
+    static func == (lhs: Request, rhs: Request) -> Bool {
+        lhs.head == rhs.head
     }
 }
