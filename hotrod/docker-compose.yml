@@ -6,9 +6,24 @@ services:
   frontend:
     build:
       context: services/frontend
-    entrypoint: ./Serve --host 0.0.0.0 --port 8000 --tracing.jaeger-host jaeger --tracing.zipkin-collector-port 9411
+    entrypoint: ./Serve --host 0.0.0.0 --port 8000 --admin-port 8001 --tracing.jaeger-host jaeger --tracing.zipkin-collector-port 9411 --customer-hostport http://customer:8010
     ports:
       - 8000:8000
+    depends_on:
+      - jaeger
+      - prometheus
+    networks:
+      - metrics
+      - tracing
+
+  # ==== ---------------------------------------------------------------------------------------------------------------
+  # MARK: Customer (8010 - 8019)
+  customer:
+    build:
+      context: services/customer
+    entrypoint: ./Serve --host 0.0.0.0 --port 8010 --admin-port 8011 --tracing.jaeger-host jaeger --tracing.zipkin-collector-port 9411
+    ports:
+      - 8010:8010
     depends_on:
       - jaeger
       - prometheus

@@ -11,6 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import AsyncHTTPClient
+import BaggageContext
 import struct Foundation.URLComponents
 import Instrumentation
 import Logging
@@ -25,14 +27,23 @@ public final class APIService {
     private let host: String
     private let port: UInt
     private let htdocsPath = "./Public"
+    private let customerHostport: String
 
+    private var httpClient: HTTPClient?
     private let logger = Logger(label: "Frontend/API")
 
-    public init(eventLoopGroup: EventLoopGroup, fileIO: NonBlockingFileIO, host: String, port: UInt) {
+    public init(
+        eventLoopGroup: EventLoopGroup,
+        fileIO: NonBlockingFileIO,
+        host: String,
+        port: UInt,
+        customerHostport: String
+    ) {
         self.eventLoopGroup = eventLoopGroup
         self.fileIO = fileIO
         self.host = host
         self.port = port
+        self.customerHostport = customerHostport
     }
 
     public func start() -> EventLoopFuture<Void> {
@@ -91,30 +102,39 @@ extension APIService {
         }
         self.logger.info("Finding nearest driver for customer: \(customerID)")
 
-        let clientSpan = InstrumentationSystem.tracer.startSpan(
-            named: "GET /customer",
-            baggage: request.baggage,
-            ofKind: .client
-        )
-        clientSpan.attributes.http.method = HTTPMethod.GET.rawValue
-        clientSpan.attributes.http.scheme = "http"
-        clientSpan.attributes.http.target = "/customer"
-
-        clientSpan.addLink(SpanLink(baggage: request.baggage))
-
-        return context.eventLoop.flatScheduleTask(in: .seconds(1)) {
-            let buffer = context.channel.allocator.buffer(string: #"{"Driver":"🐢","ETA":50000000000}"#)
-            let responseHead = HTTPResponseHead(version: request.head.version, status: .ok, headers: [
-                "Content-Type": "application/json",
-                "Content-Length": "\(buffer.readableBytes)",
-            ])
-            context.write(NIOAny(HTTPServerResponsePart.head(responseHead)), promise: nil)
-            context.write(NIOAny(HTTPServerResponsePart.body(.byteBuffer(buffer))), promise: nil)
-            clientSpan.attributes.http.statusCode = Int(HTTPResponseStatus.ok.code)
-            clientSpan.attributes.http.statusText = HTTPResponseStatus.ok.reasonPhrase
-            clientSpan.end()
-            return context.writeAndFlush(NIOAny(HTTPServerResponsePart.end(nil))).map { responseHead }
-        }.futureResult
+        let client = HTTPClient(eventLoopGroupProvider: .shared(context.eventLoop))
+        return client
+            .get(
+                url: "\(self.customerHostport)/customer?customer=\(customerID)",
+                context: DefaultContext(baggage: request.baggage, logger: self.logger)
+            )
+            .flatMap { response in
+                guard response.status == .ok else {
+                    let responseHead = HTTPResponseHead(version: request.head.version, status: response.status)
+                    context.write(NIOAny(HTTPServerResponsePart.head(responseHead)), promise: nil)
+                    return context.writeAndFlush(NIOAny(HTTPServerResponsePart.end(nil))).map { responseHead }
+                }
+                let eta = Int.random(in: 25_000_000_000 ... 50_000_000_000)
+                let buffer = context.channel.allocator.buffer(string: #"{"Driver":"🐢","ETA":\#(eta)}"#)
+                let responseHead = HTTPResponseHead(version: request.head.version, status: .ok, headers: [
+                    "Content-Type": "application/json",
+                    "Content-Length": "\(buffer.readableBytes)",
+                ])
+                context.write(NIOAny(HTTPServerResponsePart.head(responseHead)), promise: nil)
+                context.write(NIOAny(HTTPServerResponsePart.body(.byteBuffer(buffer))), promise: nil)
+                return context.writeAndFlush(NIOAny(HTTPServerResponsePart.end(nil))).map { responseHead }
+            }
+            .flatMap { (responseHead: HTTPResponseHead) in
+                let promise = context.eventLoop.makePromise(of: HTTPResponseHead.self)
+                client.shutdown { error in
+                    if let error = error {
+                        promise.fail(error)
+                    } else {
+                        promise.succeed(responseHead)
+                    }
+                }
+                return promise.futureResult
+            }
     }
 }
 

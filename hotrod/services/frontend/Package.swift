@@ -13,6 +13,7 @@ let package = Package(
             from: "0.5.0"
         ),
         .package(url: "https://github.com/slashmo/swift-nio.git", .branch("feature/baggage-context")),
+        .package(url: "https://github.com/slashmo/async-http-client.git", .branch("feature/instrumentation")),
         .package(url: "https://github.com/slashmo/gsoc-swift-tracing.git", .branch("main")),
         .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "1.0.0-alpha.5"),
         .package(url: "https://github.com/apple/swift-metrics.git", from: "2.0.0"),
@@ -28,6 +29,7 @@ let package = Package(
             .product(name: "SwiftPrometheus", package: "SwiftPrometheus"),
         ]),
         .target(name: "API", dependencies: [
+            .product(name: "AsyncHTTPClient", package: "async-http-client"),
             .product(name: "NIO", package: "swift-nio"),
             .product(name: "NIOHTTP1", package: "swift-nio"),
             .product(name: "BaggageContext", package: "swift-context"),

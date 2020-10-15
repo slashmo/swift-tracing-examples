@@ -133,7 +133,7 @@ final class HTTPServerHandler: ChannelInboundHandler {
     ) {
         let dimensions = [
             ("method", request.head.method.rawValue),
-            ("path", request.head.uri),
+            ("path", request.urlComponents.path),
             ("status", "\(responseHead.status.code)"),
         ]
 

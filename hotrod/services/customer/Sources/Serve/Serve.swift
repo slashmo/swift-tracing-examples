@@ -44,9 +44,6 @@ struct Serve: ParsableCommand {
     )
     var zipkinCollectorPort: UInt?
 
-    @Option(name: .long, help: "The host and port where the customer service is running")
-    var customerHostport: String
-
     func run() throws {
         let eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
         let threadPool = NIOThreadPool(numberOfThreads: System.coreCount)
@@ -55,7 +52,7 @@ struct Serve: ParsableCommand {
         self.bootstrapLoggingSystem()
         self.bootstrapInstrumentationSystem(group: eventLoopGroup)
 
-        let lifecycle = self.serviceLifecycle(group: eventLoopGroup, fileIO: NonBlockingFileIO(threadPool: threadPool))
+        let lifecycle = self.serviceLifecycle(group: eventLoopGroup)
         try lifecycle.startAndWait()
     }
 
@@ -74,22 +71,16 @@ struct Serve: ParsableCommand {
         let zipkinReporter = JaegerTracer.Reporter.zipkinv2(
             collectorHost: jaegerHost,
             collectorPort: zipkinCollectorPort,
-            userAgent: "Fronted Service Tracing / Zipkin Reporter",
+            userAgent: "Customer Service Tracing / Zipkin Reporter",
             eventLoopGroup: group
         )
-        let jaegerSettings = JaegerTracer.Settings(serviceName: "frontend", reporter: zipkinReporter)
+        let jaegerSettings = JaegerTracer.Settings(serviceName: "customer", reporter: zipkinReporter)
         InstrumentationSystem.bootstrap(JaegerTracer(settings: jaegerSettings, group: group))
     }
 
-    private func serviceLifecycle(group: EventLoopGroup, fileIO: NonBlockingFileIO) -> ServiceLifecycle {
+    private func serviceLifecycle(group: EventLoopGroup) -> ServiceLifecycle {
         let admin = AdminService(eventLoopGroup: group, host: self.host, port: self.adminPort)
-        let api = APIService(
-            eventLoopGroup: group,
-            fileIO: fileIO,
-            host: self.host,
-            port: self.port,
-            customerHostport: self.customerHostport
-        )
+        let api = APIService(eventLoopGroup: group, host: self.host, port: self.port)
 
         let lifecycle = ServiceLifecycle()
         lifecycle.register(label: "admin", start: .eventLoopFuture(admin.start), shutdown: .none)

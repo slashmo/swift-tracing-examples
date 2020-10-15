@@ -10,7 +10,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 //===----------------------------------------------------------------------===//
-import BaggageContext
+
+import Baggage
 import Instrumentation
 import NIOInstrumentation
 import OpenTelemetryInstrumentationSupport
@@ -25,23 +26,22 @@ final class CustomerController {
         InstrumentationSystem.instrument.extract(request.headers, into: &baggage, using: HTTPHeadersExtractor())
 
         let span = InstrumentationSystem.tracer.startSpan(
-            named: "HTTP \(request.method) \(request.url.string)",
+            named: "HTTP \(request.method) \(request.url.path)",
             baggage: baggage,
             ofKind: .server
         )
+        span.addLink(SpanLink(baggage: baggage))
         span.attributes.http.method = request.method.rawValue
         span.attributes.http.flavor = "\(request.version.major).\(request.version.minor)"
         span.attributes.http.host = request.headers.host
-        span.attributes.http.target = request.url.string
+        span.attributes.http.target = request.url.path
         span.attributes.http.scheme = request.url.scheme
         span.attributes.http.userAgent = request.headers.userAgent
-
         if let remoteAddress = request.remoteAddress {
             span.attributes.net.peerIP = remoteAddress.ipAddress
         }
 
         return self
-            // pass along the span.context as it may contain additional values compared to context
             .getCustomer(request, baggage: span.baggage)
             .always { result in
                 switch result {
@@ -63,8 +63,14 @@ final class CustomerController {
     private func getCustomer(_ request: Request, baggage: Baggage) -> EventLoopFuture<Response> {
         do {
             let customerID = try request.query.get(String.self, at: "customer")
-            return CustomerDatabase()
-                .findCustomer(byID: customerID, context: .init(request: request, baggage: baggage))
+            let databaseContext = CustomerDatabase.Context(
+                eventLoopGroup: request.eventLoop,
+                logger: request.logger,
+                baggage: baggage
+            )
+            return request
+                .customerDatabase
+                .findCustomer(byID: customerID, context: databaseContext)
                 .encodeResponse(status: .ok, for: request)
         } catch {
             return request.eventLoop.makeFailedFuture(Abort(.badRequest))
@@ -74,7 +80,8 @@ final class CustomerController {
 
 extension CustomerController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
-        routes.get("customer", use: self.getCustomerTraced)
+        let routes = routes.grouped("customer")
+        routes.get(use: self.getCustomerTraced)
     }
 }
 
