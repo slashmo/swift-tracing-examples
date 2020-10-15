@@ -143,7 +143,7 @@ final class HTTPServerHandler: ChannelInboundHandler {
             label: "http_request_duration_seconds",
             dimensions: dimensions,
             preferredDisplayUnit: .seconds
-        ).recordNanoseconds(DispatchTime.now().uptimeNanoseconds - startTime.uptimeNanoseconds)
+        ).recordInterval(since: startTime)
     }
 }
 
