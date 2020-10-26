@@ -30,7 +30,6 @@ final class CustomerController {
             baggage: baggage,
             ofKind: .server
         )
-        span.addLink(SpanLink(baggage: baggage))
         span.attributes.http.method = request.method.rawValue
         span.attributes.http.flavor = "\(request.version.major).\(request.version.minor)"
         span.attributes.http.host = request.headers.host

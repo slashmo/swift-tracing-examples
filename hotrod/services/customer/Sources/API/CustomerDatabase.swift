@@ -22,7 +22,6 @@ final class CustomerDatabase {
             baggage: context.baggage,
             ofKind: .client
         )
-        span.addLink(SpanLink(baggage: context.baggage))
         context.logger.info("Query customer database")
 
         // TODO: Add SQL semantics to OpenTelemetryInstrumentationSystem
