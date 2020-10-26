@@ -2,7 +2,7 @@
 //
 // This source file is part of the Swift Tracing Examples open source project
 //
-// Copyright (c) YEARS Moritz Lang and the Swift Tracing Examples project authors
+// Copyright (c) 2020 Moritz Lang and the Swift Tracing Examples project authors
 // Licensed under Apache License v2.0
 //
 // See LICENSE.txt for license information
@@ -10,39 +10,38 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 //===----------------------------------------------------------------------===//
+
 import Baggage
 import Instrumentation
 import NIOInstrumentation
 import OpenTelemetryInstrumentationSupport
-import TracingInstrumentation
+import Tracing
 import Vapor
 
 final class CustomerController {
     // Wraps `getCustomer(_ request: Request)` to trace the request.
     // TODO: note that this code can be either done internally in vapor or other instrumentation layers in the future
     private func getCustomerTraced(_ request: Request) -> EventLoopFuture<Response> {
-        var context = BaggageContext()
-        InstrumentationSystem.instrument.extract(request.headers, into: &context, using: HTTPHeadersExtractor())
+        var baggage = Baggage.topLevel
+        InstrumentationSystem.instrument.extract(request.headers, into: &baggage, using: HTTPHeadersExtractor())
 
-        var span = InstrumentationSystem.tracingInstrument.startSpan(
-            named: "HTTP \(request.method) \(request.url.string)",
-            context: context,
+        let span = InstrumentationSystem.tracer.startSpan(
+            named: "HTTP \(request.method) \(request.url.path)",
+            baggage: baggage,
             ofKind: .server
         )
         span.attributes.http.method = request.method.rawValue
         span.attributes.http.flavor = "\(request.version.major).\(request.version.minor)"
         span.attributes.http.host = request.headers.host
-        span.attributes.http.target = request.url.string
+        span.attributes.http.target = request.url.path
         span.attributes.http.scheme = request.url.scheme
         span.attributes.http.userAgent = request.headers.userAgent
-        span.attributes.http.requestContentLength = request.headers.contentLength
-
         if let remoteAddress = request.remoteAddress {
             span.attributes.net.peerIP = remoteAddress.ipAddress
         }
 
         return self
-            .getCustomer(request, context: context)
+            .getCustomer(request, baggage: span.baggage)
             .always { result in
                 switch result {
                 case .success(let response):
@@ -60,13 +59,17 @@ final class CustomerController {
             }
     }
 
-    private func getCustomer(_ request: Request, context: BaggageContext) -> EventLoopFuture<Response> {
+    private func getCustomer(_ request: Request, baggage: Baggage) -> EventLoopFuture<Response> {
         do {
-            try GetCustomerRequest.validate(content: request)
-            let getCustomerRequest = try request.content.decode(GetCustomerRequest.self)
-
-            return CustomerDatabase()
-                .findCustomer(byID: getCustomerRequest.id, context: .init(request: request, context: context))
+            let customerID = try request.query.get(String.self, at: "customer")
+            let databaseContext = CustomerDatabase.Context(
+                eventLoopGroup: request.eventLoop,
+                logger: request.logger,
+                baggage: baggage
+            )
+            return request
+                .customerDatabase
+                .findCustomer(byID: customerID, context: databaseContext)
                 .encodeResponse(status: .ok, for: request)
         } catch {
             return request.eventLoop.makeFailedFuture(Abort(.badRequest))
@@ -74,23 +77,10 @@ final class CustomerController {
     }
 }
 
-private struct GetCustomerRequest: Content {
-    let id: String
-
-    private enum CodingKeys: String, CodingKey {
-        case id = "customer"
-    }
-}
-
-extension GetCustomerRequest: Validatable {
-    static func validations(_ validations: inout Validations) {
-        validations.add("customer", as: String.self, is: !.empty)
-    }
-}
-
 extension CustomerController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
-        routes.get("customer", use: self.getCustomerTraced)
+        let routes = routes.grouped("customer")
+        routes.get(use: self.getCustomerTraced)
     }
 }
 
